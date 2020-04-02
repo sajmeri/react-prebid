@@ -48,8 +48,9 @@ export default class Advertising {
         this[setupCustomEvents]();
         await Promise.all([
             Advertising[queueForPrebid](this[setupPrebid].bind(this)),
-            Advertising[queueForGPT](this[setupGpt].bind(this)),
-            Advertising[queueForAmazon](this[setupAmazon].bind(this))
+            Advertising[queueForGPT](this[setupGpt].bind(this))
+            // ,
+            // Advertising[queueForAmazon](this[setupAmazon].bind(this))
         ]);
         if (queue.length === 0) {
             return;
@@ -69,13 +70,13 @@ export default class Advertising {
                 adUnitCodes: divIds,
                 bidsBackHandler() {
                     window.pbjs.setTargetingForGPTAsync(divIds);
-                    // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
+                    Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
                     this.prebid = true;
-                    Advertising[sendAdServeRequest](selectedSlots);
+                    // Advertising[sendAdServeRequest](selectedSlots);
                 }
             })
         );
-console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+// console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
         Advertising[queueForAmazon](() =>
             window.apstag.fetchBids(
               {

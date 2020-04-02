@@ -48,7 +48,7 @@ export default class Advertising {
         this[setupCustomEvents]();
         await Promise.all([
             Advertising[queueForPrebid](this[setupPrebid].bind(this)),
-            Advertising[queueForGPT](this[setupGpt].bind(this))
+            Advertising[queueForGPT](this[setupGpt].bind(this)),
             Advertising[queueForAmazon](this[setupAmazon].bind(this))
         ]);
         if (queue.length === 0) {

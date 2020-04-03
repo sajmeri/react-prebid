@@ -17,6 +17,7 @@ const teardownCustomEvents = Symbol('teardown custom events (private method)');
 const withQueue = Symbol('with queue (private method)');
 const queueForGPT = Symbol('queue for GPT (private method)');
 const queueForPrebid = Symbol('queue for Prebid (private method)');
+const queueForAmazon = Symbol('queue for Amazon (private method)');
 const setDefaultConfig = Symbol('set default config (private method)');
 const executePlugins = Symbol('execute plugins (private method)');
 const sendAdServeRequest = Symbol('Send ad requests to GAM');
@@ -50,7 +51,7 @@ export default class Advertising {
             Advertising[queueForPrebid](this[setupPrebid].bind(this)),
             Advertising[queueForGPT](this[setupGpt].bind(this))
             // ,
-            // Advertising[queueForAmazon](this[setupAmazon].bind(this))
+            // Advertising[queueForAmazon]("init", this[setupAmazon].bind(this))
         ]);
         if (queue.length === 0) {
             return;
@@ -65,7 +66,7 @@ export default class Advertising {
         }
         const divIds = queue.map(({ id }) => id);
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
-        Advertising[queueForPrebid](() =>{
+        Advertising[queueForPrebid](() =>
             window.pbjs.requestBids({
                 adUnitCodes: divIds,
                 bidsBackHandler() {
@@ -75,28 +76,27 @@ export default class Advertising {
                     Advertising[sendAdServeRequest](selectedSlots);
                 }
             })
-         }
-
         );
 console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-        Advertising[queueForAmazon](() =>
-            window.apstag.fetchBids(
-              {
-                slots: [{
-                  slotID: 'div-gpt-ad-bigbox',
-                  slotName: '/homepage/div-gpt-ad-bigbox',
-                  sizes: [[300, 250]]
-                }]
-              },
-              function(bids) {
-                googletag.cmd.push(function() {
-                  apstag.setDisplayBids();
-                  this.amazon = true;
-                  Advertising[sendAdServeRequest]();
-                })
-              }
-            )
-        );
+        // Advertising[queueForAmazon]("fetchBids", () =>
+            // window.apstag.fetchBids(
+            //   {
+            //     slots: [{
+            //       slotID: 'div-gpt-ad-bigbox',
+            //       slotName: '/homepage/div-gpt-ad-bigbox',
+            //       sizes: [[300, 250]]
+            //     }]1
+            //   },
+            //   function(bids) {
+            //     googletag.cmd.push(function() {
+            //       apstag.setDisplayBids();
+            //       this.amazon = true;
+            //       Advertising[sendAdServeRequest]();
+            //     })
+            //   }
+            // )
+        // );
+        // Advertising[queueForAmazon](() => Advertising[sendAdServeRequest](selectedSlots))
     }
 
     async teardown() {
@@ -248,7 +248,7 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     }
 
     [sendAdServeRequest](selectedSlots) {
-      if (this.prebid && /*this.amazon &&*/ !this.adserverRequestSent) {
+      if (this.prebid /*&& this.amazon*/ && !this.adserverRequestSent) {
         Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
       }
     }
@@ -325,9 +325,21 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         return Advertising[withQueue](window.pbjs.que, func);
     }
 
-    static [queueForAmazon](func) {
-        return Advertising[withQueue](window.apstag.fetchBids, func);
-    }
+    // static [queueForAmazon](key, func) {
+    //     if (key === 'init') {
+    //       return Advertising[withAmaQueue](window.apstag.init, func);
+    //     } else {
+    //       return Advertising[withAmaQueue](window.apstag.fetchBids, func);
+    //     }
+
+    // }
+
+    // static [withAmaQueue](queue, key, func) {
+    //     return new Promise(resolve =>
+    //         queue(func())
+    //     );
+    // }
+
 
     static [withQueue](queue, func) {
         return new Promise(resolve =>

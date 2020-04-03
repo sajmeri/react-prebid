@@ -141,36 +141,16 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             }
             return (this.customEventCallbacks[customEventId][id] = customEventHandlers[customEventId]);
         });
-        Advertising[queueForPrebid](() => {
-            window.apstag.fetchBids(
-                {
-                  slots: [{
-                    slotID: 'div-gpt-ad-bigbox',
-                    slotName: '/homepage/div-gpt-ad-bigbox',
-                    sizes: [[300, 250]]
-                  }]
-                },
-                function(bids) {
-                    console.log("Amazon fetched bids activate", bids);
-                  googletag.cmd.push(function() {
-                    apstag.setDisplayBids();
-                    this.amazon = true;
-                    Advertising[sendAdServeRequest](selectedSlots);
-                  })
-                }
-              );
-              window.pbjs.requestBids({
-                adUnitCodes: divIds,
-                bidsBackHandler() {
-                    console.log("pbjs bidbackhandler activate");
-                    window.pbjs.setTargetingForGPTAsync(divIds);
-                    // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
-                    this.prebid = true;
-                    Advertising[sendAdServeRequest](selectedSlots);
-                }
-            });
+        Advertising[queueForPrebid](() =>
 
-        });
+            window.pbjs.requestBids({
+                adUnitCodes: [id],
+                bidsBackHandler() {
+                    window.pbjs.setTargetingForGPTAsync([id]);
+                    Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]));
+                }
+            })
+        );
     }
 
     isConfigReady() {

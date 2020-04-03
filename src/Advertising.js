@@ -17,7 +17,6 @@ const teardownCustomEvents = Symbol('teardown custom events (private method)');
 const withQueue = Symbol('with queue (private method)');
 const queueForGPT = Symbol('queue for GPT (private method)');
 const queueForPrebid = Symbol('queue for Prebid (private method)');
-const queueForAmazon = Symbol('queue for Amazon (private method)');
 const setDefaultConfig = Symbol('set default config (private method)');
 const executePlugins = Symbol('execute plugins (private method)');
 const sendAdServeRequest = Symbol('Send ad requests to GAM');
@@ -48,9 +47,10 @@ export default class Advertising {
         const { slots, outOfPageSlots, queue } = this;
         this[setupCustomEvents]();
         await Promise.all([
-            Advertising[queueForAmazon]("init", this[setupAmazon].bind(this)),
             Advertising[queueForPrebid](this[setupPrebid].bind(this)),
             Advertising[queueForGPT](this[setupGpt].bind(this))
+            // ,
+            // Advertising[queueForAmazon](this[setupAmazon].bind(this))
         ]);
         if (queue.length === 0) {
             return;
@@ -66,57 +66,37 @@ export default class Advertising {
         const divIds = queue.map(({ id }) => id);
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
         Advertising[queueForPrebid](() =>{
-            console.log(window.apstag);
-            // window.apstag.fetchBids(
-            //     {
-            //       slots: [{
-            //         slotID: 'div-gpt-ad-bigbox',
-            //         slotName: '/homepage/div-gpt-ad-bigbox',
-            //         sizes: [[300, 250]]
-            //       }]
-            //     },
-            //     function(bids) {
-            //         console.log("Amazon fetched bids", bids);
-            //       googletag.cmd.push(function() {
-            //         apstag.setDisplayBids();
-            //         this.amazon = true;
-            //         Advertising[sendAdServeRequest](selectedSlots);
-            //       })
-            //     }
-            //   );
-              window.pbjs.requestBids({
+            window.pbjs.requestBids({
                 adUnitCodes: divIds,
                 bidsBackHandler() {
-                    console.log("pbjs bidbackhandler");
                     window.pbjs.setTargetingForGPTAsync(divIds);
                     // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
                     this.prebid = true;
                     Advertising[sendAdServeRequest](selectedSlots);
                 }
-            });
+            })
+         }
 
-        });
-
+        );
 console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-        // Advertising[queueForAmazon]("fetchBids", () =>
-        //     window.apstag.fetchBids(
-        //       {
-        //         slots: [{
-        //           slotID: 'div-gpt-ad-bigbox',
-        //           slotName: '/homepage/div-gpt-ad-bigbox',
-        //           sizes: [[300, 250]]
-        //         }]
-        //       },
-        //       function(bids) {
-        //         googletag.cmd.push(function() {
-        //           apstag.setDisplayBids();
-        //           this.amazon = true;
-        //           Advertising[sendAdServeRequest](selectedSlots);
-        //         })
-        //       }
-        //     )
-        // );
-        // Advertising[queueForAmazon](() => Advertising[sendAdServeRequest](selectedSlots))
+        Advertising[queueForAmazon](() =>
+            window.apstag.fetchBids(
+              {
+                slots: [{
+                  slotID: 'div-gpt-ad-bigbox',
+                  slotName: '/homepage/div-gpt-ad-bigbox',
+                  sizes: [[300, 250]]
+                }]
+              },
+              function(bids) {
+                googletag.cmd.push(function() {
+                  apstag.setDisplayBids();
+                  this.amazon = true;
+                  Advertising[sendAdServeRequest]();
+                })
+              }
+            )
+        );
     }
 
     async teardown() {
@@ -143,7 +123,6 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             return (this.customEventCallbacks[customEventId][id] = customEventHandlers[customEventId]);
         });
         Advertising[queueForPrebid](() =>
-
             window.pbjs.requestBids({
                 adUnitCodes: [id],
                 bidsBackHandler() {
@@ -269,9 +248,7 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     }
 
     [sendAdServeRequest](selectedSlots) {
-        console.log("sendAdServeRequest");
-      if (this.prebid && this.amazon && !this.adserverRequestSent) {
-        console.log("sendAdServeRequest - both bids back");
+      if (this.prebid && /*this.amazon &&*/ !this.adserverRequestSent) {
         Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
       }
     }
@@ -348,32 +325,9 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         return Advertising[withQueue](window.pbjs.que, func);
     }
 
-    // static [queueForAmazon](key, func) {
-    //     if (key === 'init') {
-    //       return Advertising[withAmaQueue](window.apstag.init, func);
-    //     } else {
-    //       return Advertising[withAmaQueue](window.apstag.fetchBids, func);
-    //     }
-
-    // }
-    // apstag.fetchBids({
-    //     slots: apstagSlots
-    //     },
-    //     function(bids) {
-    //         googletag.cmd.push(function() {
-    //             apstag.setDisplayBids();
-    //             biddersBack++;
-    //             window.prebidHelperFunctions.bothBiddersBack(biddersBack,adServerCalled);
-    //         });
-    //     }
-    // );
-
-    // static [withAmaQueue](queue, key, func) {
-    //     return new Promise(resolve =>
-    //         queue(func())
-    //     );
-    // }
-
+    static [queueForAmazon](func) {
+        return Advertising[withQueue](window.apstag.fetchBids, func);
+    }
 
     static [withQueue](queue, func) {
         return new Promise(resolve =>

@@ -48,9 +48,9 @@ export default class Advertising {
         const { slots, outOfPageSlots, queue } = this;
         this[setupCustomEvents]();
         await Promise.all([
+            Advertising[queueForAmazon]("init", this[setupAmazon].bind(this)),
             Advertising[queueForPrebid](this[setupPrebid].bind(this)),
-            Advertising[queueForGPT](this[setupGpt].bind(this)),
-            Advertising[queueForAmazon]("init", this[setupAmazon].bind(this))
+            Advertising[queueForGPT](this[setupGpt].bind(this))
         ]);
         if (queue.length === 0) {
             return;
@@ -65,35 +65,55 @@ export default class Advertising {
         }
         const divIds = queue.map(({ id }) => id);
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
-        Advertising[queueForPrebid](() =>
-            window.pbjs.requestBids({
+        Advertising[queueForPrebid](() =>{
+            window.apstag.fetchBids(
+                {
+                  slots: [{
+                    slotID: 'div-gpt-ad-bigbox',
+                    slotName: '/homepage/div-gpt-ad-bigbox',
+                    sizes: [[300, 250]]
+                  }]
+                },
+                function(bids) {
+                    console.log("Amazon fetched bids", bids);
+                  googletag.cmd.push(function() {
+                    apstag.setDisplayBids();
+                    this.amazon = true;
+                    Advertising[sendAdServeRequest](selectedSlots);
+                  })
+                }
+              );
+              window.pbjs.requestBids({
                 adUnitCodes: divIds,
                 bidsBackHandler() {
+                    console.log("pbjs bidbackhandler");
                     window.pbjs.setTargetingForGPTAsync(divIds);
                     // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
                     this.prebid = true;
                     Advertising[sendAdServeRequest](selectedSlots);
                 }
-            })
-        );
+            });
+
+        });
+
 console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
         // Advertising[queueForAmazon]("fetchBids", () =>
-            // window.apstag.fetchBids(
-            //   {
-            //     slots: [{
-            //       slotID: 'div-gpt-ad-bigbox',
-            //       slotName: '/homepage/div-gpt-ad-bigbox',
-            //       sizes: [[300, 250]]
-            //     }]1
-            //   },
-            //   function(bids) {
-            //     googletag.cmd.push(function() {
-            //       apstag.setDisplayBids();
-            //       this.amazon = true;
-            //       Advertising[sendAdServeRequest]();
-            //     })
-            //   }
-            // )
+        //     window.apstag.fetchBids(
+        //       {
+        //         slots: [{
+        //           slotID: 'div-gpt-ad-bigbox',
+        //           slotName: '/homepage/div-gpt-ad-bigbox',
+        //           sizes: [[300, 250]]
+        //         }]
+        //       },
+        //       function(bids) {
+        //         googletag.cmd.push(function() {
+        //           apstag.setDisplayBids();
+        //           this.amazon = true;
+        //           Advertising[sendAdServeRequest](selectedSlots);
+        //         })
+        //       }
+        //     )
         // );
         // Advertising[queueForAmazon](() => Advertising[sendAdServeRequest](selectedSlots))
     }
@@ -121,15 +141,36 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             }
             return (this.customEventCallbacks[customEventId][id] = customEventHandlers[customEventId]);
         });
-        Advertising[queueForPrebid](() =>
-            window.pbjs.requestBids({
-                adUnitCodes: [id],
-                bidsBackHandler() {
-                    window.pbjs.setTargetingForGPTAsync([id]);
-                    Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]));
+        Advertising[queueForPrebid](() => {
+            window.apstag.fetchBids(
+                {
+                  slots: [{
+                    slotID: 'div-gpt-ad-bigbox',
+                    slotName: '/homepage/div-gpt-ad-bigbox',
+                    sizes: [[300, 250]]
+                  }]
+                },
+                function(bids) {
+                    console.log("Amazon fetched bids activate", bids);
+                  googletag.cmd.push(function() {
+                    apstag.setDisplayBids();
+                    this.amazon = true;
+                    Advertising[sendAdServeRequest](selectedSlots);
+                  })
                 }
-            })
-        );
+              );
+              window.pbjs.requestBids({
+                adUnitCodes: divIds,
+                bidsBackHandler() {
+                    console.log("pbjs bidbackhandler activate");
+                    window.pbjs.setTargetingForGPTAsync(divIds);
+                    // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
+                    this.prebid = true;
+                    Advertising[sendAdServeRequest](selectedSlots);
+                }
+            });
+
+        });
     }
 
     isConfigReady() {
@@ -247,7 +288,9 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     }
 
     [sendAdServeRequest](selectedSlots) {
-      if (this.prebid /*&& this.amazon*/ && !this.adserverRequestSent) {
+        console.log("sendAdServeRequest");
+      if (this.prebid && this.amazon && !this.adserverRequestSent) {
+        console.log("sendAdServeRequest - both bids back");
         Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
       }
     }
@@ -324,20 +367,31 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         return Advertising[withQueue](window.pbjs.que, func);
     }
 
-    static [queueForAmazon](key, func) {
-        if (key === 'init') {
-          return Advertising[withAmaQueue](window.apstag.init, func);
-        } else {
-          return Advertising[withAmaQueue](window.apstag.fetchBids, func);
-        }
+    // static [queueForAmazon](key, func) {
+    //     if (key === 'init') {
+    //       return Advertising[withAmaQueue](window.apstag.init, func);
+    //     } else {
+    //       return Advertising[withAmaQueue](window.apstag.fetchBids, func);
+    //     }
 
-    }
+    // }
+    // apstag.fetchBids({
+    //     slots: apstagSlots
+    //     },
+    //     function(bids) {
+    //         googletag.cmd.push(function() {
+    //             apstag.setDisplayBids();
+    //             biddersBack++;
+    //             window.prebidHelperFunctions.bothBiddersBack(biddersBack,adServerCalled);
+    //         });
+    //     }
+    // );
 
-    static [withAmaQueue](queue, key, func) {
-        return new Promise(resolve =>
-            queue(func())
-        );
-    }
+    // static [withAmaQueue](queue, key, func) {
+    //     return new Promise(resolve =>
+    //         queue(func())
+    //     );
+    // }
 
 
     static [withQueue](queue, func) {

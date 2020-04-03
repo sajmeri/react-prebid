@@ -42,10 +42,10 @@ export default class Advertising {
         this[executePlugins]('setup');
         const { slots, outOfPageSlots, queue } = this;
         this[setupCustomEvents]();
-        // window.apstag.init({
-        //     pubID: '3392',
-        //     adServer: 'googletag'
-        // });
+        window.apstag.init({
+            pubID: '3392',
+            adServer: 'googletag'
+        });
         await Promise.all([
             Advertising[queueForPrebid](this[setupPrebid].bind(this), this.onError),
             Advertising[queueForGPT](this[setupGpt].bind(this), this.onError)
@@ -65,15 +65,13 @@ export default class Advertising {
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
         Advertising[queueForPrebid](
             () =>
-               {
-                return window.pbjs.requestBids({
+                window.pbjs.requestBids({
                     adUnitCodes: divIds,
                     bidsBackHandler() {
                         window.pbjs.setTargetingForGPTAsync(divIds);
                         Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots), this.onError);
                     }
-                })
-               },
+                }),
             this.onError
         );
     }

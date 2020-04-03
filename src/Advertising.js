@@ -66,23 +66,24 @@ export default class Advertising {
         const divIds = queue.map(({ id }) => id);
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
         Advertising[queueForPrebid](() =>{
-            window.apstag.fetchBids(
-                {
-                  slots: [{
-                    slotID: 'div-gpt-ad-bigbox',
-                    slotName: '/homepage/div-gpt-ad-bigbox',
-                    sizes: [[300, 250]]
-                  }]
-                },
-                function(bids) {
-                    console.log("Amazon fetched bids", bids);
-                  googletag.cmd.push(function() {
-                    apstag.setDisplayBids();
-                    this.amazon = true;
-                    Advertising[sendAdServeRequest](selectedSlots);
-                  })
-                }
-              );
+            console.log(window.apstag);
+            // window.apstag.fetchBids(
+            //     {
+            //       slots: [{
+            //         slotID: 'div-gpt-ad-bigbox',
+            //         slotName: '/homepage/div-gpt-ad-bigbox',
+            //         sizes: [[300, 250]]
+            //       }]
+            //     },
+            //     function(bids) {
+            //         console.log("Amazon fetched bids", bids);
+            //       googletag.cmd.push(function() {
+            //         apstag.setDisplayBids();
+            //         this.amazon = true;
+            //         Advertising[sendAdServeRequest](selectedSlots);
+            //       })
+            //     }
+            //   );
               window.pbjs.requestBids({
                 adUnitCodes: divIds,
                 bidsBackHandler() {

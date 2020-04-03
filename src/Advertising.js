@@ -64,16 +64,16 @@ export default class Advertising {
         const divIds = queue.map(({ id }) => id);
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
         Advertising[queueForPrebid](
-            () =>{
-                console.log("hello prebid &&&&&&&&&&&&&&&&&&&&&&&&");
-                window.pbjs.requestBids({
+            () =>
+               {
+                return window.pbjs.requestBids({
                     adUnitCodes: divIds,
                     bidsBackHandler() {
                         window.pbjs.setTargetingForGPTAsync(divIds);
                         Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots), this.onError);
                     }
                 })
-                },
+               },
             this.onError
         );
     }

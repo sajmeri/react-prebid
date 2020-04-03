@@ -7,7 +7,6 @@ const defineOutOfPageSlots = Symbol('define out of page slots (private method)')
 const displaySlots = Symbol('display slots (private method)');
 const displayOutOfPageSlots = Symbol('display slots (private method)');
 const setupPrebid = Symbol('setup Prebid (private method)');
-const setupAmazon = Symbol('setup Amazon TAM (private method)');
 const teardownPrebid = Symbol('teardown Prebid (private method)');
 const setupGpt = Symbol('setup GPT (private method)');
 const teardownGpt = Symbol('teardown GPT (private method)');
@@ -17,24 +16,20 @@ const teardownCustomEvents = Symbol('teardown custom events (private method)');
 const withQueue = Symbol('with queue (private method)');
 const queueForGPT = Symbol('queue for GPT (private method)');
 const queueForPrebid = Symbol('queue for Prebid (private method)');
-const queueForAmazon = Symbol('queue for Amazon (private method)');
 const setDefaultConfig = Symbol('set default config (private method)');
 const executePlugins = Symbol('execute plugins (private method)');
-const sendAdServeRequest = Symbol('Send ad requests to GAM');
 
 export default class Advertising {
-    constructor(config, plugins = []) {
+    constructor(config, plugins = [], onError = () => {}) {
         this.config = config;
         this.slots = {};
         this.outOfPageSlots = {};
         this.plugins = plugins;
+        this.onError = onError;
         this.gptSizeMappings = {};
         this.customEventCallbacks = {};
         this.customEventHandlers = {};
         this.queue = [];
-        this.prebid = false;
-        this.amazon = false;
-        this.adserverRequestSent = false;
 
         if (config) {
             this[setDefaultConfig]();
@@ -48,10 +43,8 @@ export default class Advertising {
         const { slots, outOfPageSlots, queue } = this;
         this[setupCustomEvents]();
         await Promise.all([
-            Advertising[queueForPrebid](this[setupPrebid].bind(this)),
-            Advertising[queueForGPT](this[setupGpt].bind(this))
-            // ,
-            // Advertising[queueForAmazon]("init", this[setupAmazon].bind(this))
+            Advertising[queueForPrebid](this[setupPrebid].bind(this), this.onError),
+            Advertising[queueForGPT](this[setupGpt].bind(this), this.onError)
         ]);
         if (queue.length === 0) {
             return;
@@ -66,44 +59,24 @@ export default class Advertising {
         }
         const divIds = queue.map(({ id }) => id);
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
-        Advertising[queueForPrebid](() =>
-            window.pbjs.requestBids({
-                adUnitCodes: divIds,
-                bidsBackHandler() {
-                    window.pbjs.setTargetingForGPTAsync(divIds);
-                    // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
-                    this.prebid = true;
-                    Advertising[sendAdServeRequest](selectedSlots);
-                }
-            })
+        Advertising[queueForPrebid](
+            () =>
+                window.pbjs.requestBids({
+                    adUnitCodes: divIds,
+                    bidsBackHandler() {
+                        window.pbjs.setTargetingForGPTAsync(divIds);
+                        Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots), this.onError);
+                    }
+                }),
+            this.onError
         );
-console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
-        // Advertising[queueForAmazon]("fetchBids", () =>
-            // window.apstag.fetchBids(
-            //   {
-            //     slots: [{
-            //       slotID: 'div-gpt-ad-bigbox',
-            //       slotName: '/homepage/div-gpt-ad-bigbox',
-            //       sizes: [[300, 250]]
-            //     }]1
-            //   },
-            //   function(bids) {
-            //     googletag.cmd.push(function() {
-            //       apstag.setDisplayBids();
-            //       this.amazon = true;
-            //       Advertising[sendAdServeRequest]();
-            //     })
-            //   }
-            // )
-        // );
-        // Advertising[queueForAmazon](() => Advertising[sendAdServeRequest](selectedSlots))
     }
 
     async teardown() {
         this[teardownCustomEvents]();
         await Promise.all([
-            Advertising[queueForPrebid](this[teardownPrebid].bind(this)),
-            Advertising[queueForGPT](this[teardownGpt].bind(this))
+            Advertising[queueForPrebid](this[teardownPrebid].bind(this), this.onError),
+            Advertising[queueForGPT](this[teardownGpt].bind(this), this.onError)
         ]);
         this.slots = {};
         this.gptSizeMappings = {};
@@ -122,14 +95,16 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             }
             return (this.customEventCallbacks[customEventId][id] = customEventHandlers[customEventId]);
         });
-        Advertising[queueForPrebid](() =>
-            window.pbjs.requestBids({
-                adUnitCodes: [id],
-                bidsBackHandler() {
-                    window.pbjs.setTargetingForGPTAsync([id]);
-                    Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]));
-                }
-            })
+        Advertising[queueForPrebid](
+            () =>
+                window.pbjs.requestBids({
+                    adUnitCodes: [id],
+                    bidsBackHandler() {
+                        window.pbjs.setTargetingForGPTAsync([id]);
+                        Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]), this.onError);
+                    }
+                }),
+            this.onError
         );
     }
 
@@ -247,25 +222,11 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         }
     }
 
-    [sendAdServeRequest](selectedSlots) {
-      if (this.prebid /*&& this.amazon*/ && !this.adserverRequestSent) {
-        Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
-      }
-    }
-
     [setupPrebid]() {
         this[executePlugins]('setupPrebid');
         const adUnits = getAdUnits(this.config.slots);
         window.pbjs.addAdUnits(adUnits);
         window.pbjs.setConfig(this.config.prebid);
-    }
-
-    [setupAmazon]() {
-      this[executePlugins]('setupAmazon');
-      window.apstag.init({
-        pubID: "3392",
-        adServer: 'googletag'
-      });
     }
 
     [teardownPrebid]() {
@@ -317,35 +278,23 @@ console.log("DEBUG", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         }
     }
 
-    static [queueForGPT](func) {
-        return Advertising[withQueue](window.googletag.cmd, func);
+    static [queueForGPT](func, onError) {
+        return Advertising[withQueue](window.googletag.cmd, func, onError);
     }
 
-    static [queueForPrebid](func) {
-        return Advertising[withQueue](window.pbjs.que, func);
+    static [queueForPrebid](func, onError) {
+        return Advertising[withQueue](window.pbjs.que, func, onError);
     }
 
-    // static [queueForAmazon](key, func) {
-    //     if (key === 'init') {
-    //       return Advertising[withAmaQueue](window.apstag.init, func);
-    //     } else {
-    //       return Advertising[withAmaQueue](window.apstag.fetchBids, func);
-    //     }
-
-    // }
-
-    // static [withAmaQueue](queue, key, func) {
-    //     return new Promise(resolve =>
-    //         queue(func())
-    //     );
-    // }
-
-
-    static [withQueue](queue, func) {
+    static [withQueue](queue, func, onError) {
         return new Promise(resolve =>
             queue.push(() => {
-                func();
-                resolve();
+                try {
+                    func();
+                    resolve();
+                } catch (error) {
+                    onError(error);
+                }
             })
         );
     }

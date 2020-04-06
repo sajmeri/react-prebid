@@ -5,12 +5,14 @@ import PropTypes from 'prop-types';
 class AdvertisingSlot extends Component {
     componentDidMount() {
         const { activate, id, customEventHandlers } = this.props;
+        console.log("ADVERTISING SLOT - COMPONENT DID MOUNT")
         activate(id, customEventHandlers);
     }
 
     componentDidUpdate(prevProps) {
         const { activate, id, customEventHandlers } = this.props;
         if (prevProps.activate !== activate) {
+          console.log("ADVERTISING SLOT - COMPONENT DID UPDATE")
             activate(id, customEventHandlers);
         }
     }

@@ -20,17 +20,19 @@ const setDefaultConfig = Symbol('set default config (private method)');
 const executePlugins = Symbol('execute plugins (private method)');
 
 const setupAdCallSync = Symbol("a");
-// const setupAmazon = Symbol('setup Amazon TAM (private method)');
-// const withAmaQueue = Symbol('with Amazon queue (private method)');
-// const queueForAmazon = Symbol('queue for Amazon (private method)');
-// const sendAdServeRequest = Symbol('Send ad requests to GAM');
+const scriptCmd = Symbol("b");
+const withAmaQueue = Symbol('with Amazon queue (private method)');
+const queueForAmazon = Symbol('queue for Amazon (private method)');
+const setSlotsBidsSent = Symbol('c');
+
 
 export default class Advertising {
-    constructor(config, plugins = []) {
+    constructor(config, plugins = [], onError = () => {}) {
         this.config = config;
         this.slots = {};
         this.outOfPageSlots = {};
         this.plugins = plugins;
+        this.onError = onError;
         this.gptSizeMappings = {};
         this.customEventCallbacks = {};
         this.customEventHandlers = {};
@@ -44,20 +46,15 @@ export default class Advertising {
     // ---------- PUBLIC METHODS ----------
 
     async setup() {
-console.log("AD DEBUG SETUP - IN FRUNCTION");
         this[executePlugins]('setup');
         const { slots, outOfPageSlots, queue } = this;
         this[setupCustomEvents]();
         await Promise.all([
-            Advertising[queueForPrebid](this[setupPrebid].bind(this)),
-            Advertising[queueForGPT](this[setupGpt].bind(this)),
-            Advertising[queueForGPT](this[setupAdCallSync].bind(this))
-            // Advertising[queueForAmazon]('init', [this[setupAmazon].bind(this)])
+            Advertising[queueForPrebid](this[setupPrebid].bind(this), this.onError),
+            Advertising[queueForGPT](this[setupGpt].bind(this), this.onError),
+            Advertising[scriptCmd](this[setupAdCallSync].bind(this))
         ]);
-
-console.log("AD DEBUG SETUP cont 1 - bids sent", this.bidsSent);
-console.log("AD DEBUG SETUP cont 2 - this.config.slots", this.config.slots);
-console.log("AD DEBUG SETUP cont 3 - queue", queue);
+        console.debug("SETUP() - COMPLETED PREBID, GPT AND AMAZON SETUP");
         if (queue.length === 0) {
             return;
         }
@@ -69,63 +66,76 @@ console.log("AD DEBUG SETUP cont 3 - queue", queue);
                 return (this.customEventCallbacks[customEventId][id] = customEventHandlers[customEventId]);
             });
         }
-console.log("AD DEBUG SETUP cont 4 - CALLED.");
         const divIds = queue.map(({ id }) => id);
+        // const divIds = ['div-gpt-ad-topbanner', 'div-gpt-ad-bigbox'];
         const selectedSlots = queue.map(({ id }) => slots[id] || outOfPageSlots[id]);
-console.log("AD DEBUG SETUP - SELECTED SLOTS ", selectedSlots);
-        Advertising[queueForPrebid](() =>
-            window.pbjs.requestBids({
-                adUnitCodes: divIds,
-                bidsBackHandler() {
-                    window.pbjs.setTargetingForGPTAsync(divIds);
-                    // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots))
-                    // window.setupPrebidSent = true;
-                    // window.setupAmazonSent && window.setupPrebidSent && !window.setupAdRequestSent
-                    //     ? Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots))
-                    //     : null;
-                    // window.setupAdRequestSent = window.setupPrebidSent && window.setupAmazonSent;
+        const selectedSlotsBidStatus = {};
+        console.debug("SETUP() - QUEUE", queue);
+        console.debug("SETUP() - divIds 1", divIds);
+        Advertising[queueForPrebid](
+            () =>
+                window.pbjs.requestBids({
+                    adUnitCodes: divIds,
+                    bidsBackHandler() {
+                        window.pbjs.setTargetingForGPTAsync(divIds);
+                        // Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots), this.onError);
 
-
-                    // Advertising[sendAdServeRequest](selectedSlots);
-                }
-            })
+                        Advertising[scriptCmd](() => {
+                          console.debug("SETUP() - PREBID - BIDS FOR QUEUED AD SLOTS");
+                          for (let x = 0; x < divIds.length; x++) {
+                            window.adCallSyncList[divIds[x]].prebidBidRequest = true;
+                          }
+                        });
+                        window.tempSyncList = Object.entries(window.adCallSyncList);
+                        window.syncList = window.tempSyncList.filter((adSlot) => divIds.find(divId => adSlot[0] === divId) >= 0 );
+                        if (window.syncList.every((adSlot) => {
+                             adSlot.amazonBidRequest && adSlot.prebidBidRequest && !adSlot.adRequestSent
+                            })
+                        ) {
+                          console.debug("SETUP() - PREBID CALLED REFRESH");
+                          Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots), this.onError);
+                        }
+                    }
+                }),
+            this.onError
         );
 
-        // Advertising[queueForAmazon]('fetchBids', [
-        //     {
-        //         slots: [
-        //             {
-        //                 slotID: 'div-gpt-ad-topbanner',
-        //                 slotName: '/19849159/web-theweathernetwork.com/homepage/div-gpt-ad-topbanner',
-        //                 sizes: [[300, 50], [320, 50]]
-        //             }
-        //         ]
-        //     },
-        //     function(bids) {
-        //         window.googletag.cmd.push(function() {
-        //             window.apstag.setDisplayBids();
-        //             Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]))
-        //
-        //             // window.setupAmazonSent = true;
-        //             // window.setupPrebidSent && window.setupAmazonSent && !window.setupAdRequestSent
-        //             //     ? Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]))
-        //             //     : null;
-        //             // window.setupAdRequestSent = window.setupPrebidSent && window.setupAmazonSent;
-        //
-        //             // this.amazon = true;
-        //             // Advertising[sendAdServeRequest](selectedSlots);
-        //         });
-        //     }
-        // ]);
-        // Advertising[queueForAmazon](() => Advertising[sendAdServeRequest](selectedSlots))
+        Advertising[queueForAmazon]('fetchBids', [
+          {
+            slots: [
+              {
+                  slotID: 'div-gpt-ad-topbanner',
+                  slotName: '/19849159/web-theweathernetwork.com/homepage/div-gpt-ad-topbanner',
+                  sizes: [[300, 50], [320, 50]]
+                }
+              ]
+          },
+          function(bids) {
+            window.googletag.cmd.push(function() {
+              window.apstag.setDisplayBids();
+                console.debug("SETUP() - AMAZON - BIDS FOR QUEUED AD SLOTS");
+                Advertising[scriptCmd](() => {
+                  for (let x = 0; x < divIds.length; x++) {
+                    window.adCallSyncList[divIds[x]].amazonBidRequest = true;
+                  }
+              });
+              window.tempSyncList = Object.entries(window.adCallSyncList);
+              window.syncList = window.tempSyncList.filter((adSlot) => divIds.find(divId => adSlot[0] === divId) >= 0 );
+
+              if (window.syncList.every((divId) => divId.amazonBidRequest && divId.prebidBidRequest && !divId.adRequestSent)) {
+                console.debug("SETUP() - AMAZON CALLED REFRESH");
+                Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots), this.onError);
+              }
+            });
+          }
+        ]);
     }
 
     async teardown() {
         this[teardownCustomEvents]();
-console.log("AD DEBUG TEARDOWN CALLED.");
         await Promise.all([
-            Advertising[queueForPrebid](this[teardownPrebid].bind(this)),
-            Advertising[queueForGPT](this[teardownGpt].bind(this))
+            Advertising[queueForPrebid](this[teardownPrebid].bind(this), this.onError),
+            Advertising[queueForGPT](this[teardownGpt].bind(this), this.onError)
         ]);
         this.slots = {};
         this.gptSizeMappings = {};
@@ -133,8 +143,7 @@ console.log("AD DEBUG TEARDOWN CALLED.");
     }
 
     activate(id, customEventHandlers = {}) {
-
-console.log("AD DEBUG ACTIVATE CALLED - IN FUNCTION - id: ", id);
+        console.debug("ACTIVE() - CALLED");
         const { slots } = this;
         if (Object.values(slots).length === 0) {
             this.queue.push({ id, customEventHandlers });
@@ -146,52 +155,66 @@ console.log("AD DEBUG ACTIVATE CALLED - IN FUNCTION - id: ", id);
             }
             return (this.customEventCallbacks[customEventId][id] = customEventHandlers[customEventId]);
         });
-console.log("AD DEBUG ACTIVATE CALLED cont 1 - slots ", slots);
-console.log("AD DEBUG ACTIVATE CALLED cont 2 - id.", id);
-        Advertising[queueForPrebid](() =>
-            window.pbjs.requestBids({
-                adUnitCodes: [id],
-                bidsBackHandler() {
-                    window.pbjs.setTargetingForGPTAsync([id]);
-                    Advertising[queueForGPT](() => window.adCallSyncList[slots[id]].prebidBidRequest = true);
-                    Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]));
-
-                    // window.prebidSent = true;
-                    // window.amazonSent && window.prebidSent && !window.adRequestSent
-                    //     ? Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]))
-                    //     : null;
-                    // window.adRequestSent = window.prebidSent && window.amazonSent;
-
-                    // Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]));
-                }
-            })
+        Advertising[queueForPrebid](
+            () =>
+                window.pbjs.requestBids({
+                    adUnitCodes: [id],
+                    bidsBackHandler() {
+                        window.pbjs.setTargetingForGPTAsync([id]);
+                          window.adCallSyncList[id].prebidBidRequest = true;
+                          console.debug("ACTIVE() - PREBID BID CALLBACK SLOTID '" + id +"'");
+                          Advertising[queueForGPT](() => {
+                            if (window.adCallSyncList[id].amazonBidRequest && window.adCallSyncList[id].prebidBidRequest && !window.adCallSyncList[id].adRequestSent) {
+                              window.googletag.pubads().refresh([slots[id]], this.onError);
+                              window.adCallSyncList[id].adRequestSent = true;
+                              console.debug("ACTIVE() - PREBID CALLED REFRESH  SLOTID '" + id +"'");
+                            }
+                          });
+                    }
+                }),
+            this.onError
         );
 
-        // Advertising[queueForAmazon]('fetchBids', [
-        //     {
-        //         slots: [
-        //             {
-        //                 slotID: 'div-gpt-ad-topbanner',
-        //                 slotName: '/19849159/web-theweathernetwork.com/homepage/div-gpt-ad-topbanner',
-        //                 sizes: [[300, 50], [320, 50]]
-        //             }
-        //         ]
-        //     },
-        //     function(bids) {
-        //         window.googletag.cmd.push(function() {
-        //             window.apstag.setDisplayBids();
-        //             Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]))
-        //             // window.amazonSent = true;
-        //             // window.prebidSent && window.amazonSent && !window.adRequestSent
-        //             //     ? Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]))
-        //             //     : null;
-        //             // window.adRequestSent = window.prebidSent && window.amazonSent;
-        //
-        //             // this.amazon = true;
-        //             // Advertising[sendAdServeRequest](selectedSlots);
-        //         });
-        //     }
-        // ]);
+        Advertising[queueForAmazon]('fetchBids', [
+          {
+            slots: [
+              {
+                  slotID: 'div-gpt-ad-topbanner',
+                  slotName: '/19849159/web-theweathernetwork.com/homepage/div-gpt-ad-topbanner',
+                  sizes: [[300, 50], [320, 50]]
+                }
+              ]
+          },
+          function(bids) {
+            window.googletag.cmd.push(function() {
+              window.apstag.setDisplayBids();
+              // if (window.adCallSyncList.hasOwnProperty(id)) {
+                window.adCallSyncList[id].amazonBidRequest = true
+                console.debug("ACTIVE() - AMAZON BID CALLBACK  SLOTID '" + id +"'");
+                Advertising[queueForGPT](() => {
+                  if (window.adCallSyncList[id].amazonBidRequest && window.adCallSyncList[id].prebidBidRequest && !window.adCallSyncList[id].adRequestSent) {
+                    window.googletag.pubads().refresh([slots[id]]);
+                    window.adCallSyncList[id].adRequestSent = true;
+                    console.debug("ACTIVE() - AMAZON CALLED REFRESH  SLOTID '" + id +"'");
+                  }
+                });
+              // }
+            });
+          }
+        ]);
+
+        Advertising[scriptCmd](() => {
+          if (window.adCallSyncList.hasOwnProperty(id)) {
+            window.setTimeout(() => {
+              console.debug("ACTIVE() - fallback triggered for '"+ id +"'");
+              if (!window.adCallSyncList[id].adRequestSent) {
+                console.debug("ACTIVE() - Ad call for slotid '" + id +"' has not been sent");
+                Advertising[queueForGPT](() => window.googletag.pubads().refresh([slots[id]]));
+                window.adCallSyncList[id].adRequestSent = true;
+              }
+            }, 2000);
+          }
+        });
     }
 
     isConfigReady() {
@@ -206,6 +229,14 @@ console.log("AD DEBUG ACTIVATE CALLED cont 2 - id.", id);
     // ---------- PRIVATE METHODS ----------
 
     [setupAdCallSync]() {
+      // window.adCallSyncList = new Map();
+      // this.config.slots.forEach((slot) => {
+      //   window.adCallSyncList.set(slot.id, {
+      //         prebidBidRequest: false,
+      //         amazonBidRequest: false,
+      //         adRequestSent: false
+      //   });
+      // }
       window.adCallSyncList = {};
       this.config.slots.forEach((slot) => {
         window.adCallSyncList[slot.id] = {
@@ -319,26 +350,12 @@ console.log("AD DEBUG ACTIVATE CALLED cont 2 - id.", id);
         }
     }
 
-    // [sendAdServeRequest](selectedSlots) {
-    //   if (this.prebid /*&& this.amazon*/ && !this.adserverRequestSent) {
-    //     this.adserverRequestSent = true;
-    //     Advertising[queueForGPT](() => window.googletag.pubads().refresh(selectedSlots));
-    //   }
-    // }
-
     [setupPrebid]() {
         this[executePlugins]('setupPrebid');
         const adUnits = getAdUnits(this.config.slots);
         window.pbjs.addAdUnits(adUnits);
         window.pbjs.setConfig(this.config.prebid);
     }
-
-    // [setupAmazon]() {
-    //     return {
-    //         pubID: '3392',
-    //         adServer: 'googletag'
-    //     };
-    // }
 
     [teardownPrebid]() {
         this[executePlugins]('teardownPrebid');
@@ -389,35 +406,48 @@ console.log("AD DEBUG ACTIVATE CALLED cont 2 - id.", id);
         }
     }
 
-    static [queueForGPT](func) {
-        return Advertising[withQueue](window.googletag.cmd, func);
+    static [queueForGPT](func, onError) {
+        return Advertising[withQueue](window.googletag.cmd, func, onError);
     }
 
-    static [queueForPrebid](func) {
-        return Advertising[withQueue](window.pbjs.que, func);
+    static [queueForPrebid](func, onError) {
+        return Advertising[withQueue](window.pbjs.que, func, onError);
     }
 
-    // static [queueForAmazon](key, param) {
-    //     if (key === 'init') {
-    //         return Advertising[withAmaQueue](window.apstag.init, param);
-    //     }
-    //     return Advertising[withAmaQueue](window.apstag.fetchBids, param);
-    // }
-
-    // static [withAmaQueue](queue, param) {
-    //     return new Promise(resolve => {
-    //         console.log("AD DEBUG", param[0]);
-    //         queue(...param);
-    //         resolve();
-    //     });
-    // }
-
-    static [withQueue](queue, func) {
+    static [withQueue](queue, func, onError) {
         return new Promise(resolve =>
             queue.push(() => {
-                func();
-                resolve();
+                try {
+                    func();
+                    resolve();
+                } catch (error) {
+                    onError(error);
+                }
             })
         );
+    }
+
+    static [queueForAmazon](key, param) {
+      if (key === 'init') {
+        return Advertising[withAmaQueue](window.apstag.init, param);
+      } else {
+        return Advertising[withAmaQueue](window.apstag.fetchBids, param);
+      }
+    }
+
+
+    static [withAmaQueue](queue, param) {
+      return new Promise(resolve => {
+          console.log("AD DEBUG", param[0]);
+          queue(...param);
+          resolve();
+      });
+    }
+
+    static [scriptCmd](func) {
+      return new Promise(resolve => {
+        func()
+        resolve();
+      });
     }
 }
